@@ -35,7 +35,7 @@ pub fn configure(b: *Build, target: Build.ResolvedTarget, optimize: std.builtin.
 
     // Generate the buildvm_arch.h file using minilua
     const dynasm_run = b.addRunArtifact(minilua);
-    dynasm_run.addFileArg(upstream.path("dynasm/dynasm.lua"));
+    dynasm_run.addFileArg(getPathSeparatorFixedDynasm(b, target, upstream));
 
     // TODO: Many more flags to figure out
     if (target.result.cpu.arch.endian() == .little) {
@@ -196,6 +196,26 @@ pub fn configure(b: *Build, target: Build.ResolvedTarget, optimize: std.builtin.
     lib.installHeader(luajit_h, "luajit.h");
 
     return lib;
+}
+
+fn getPathSeparatorFixedDynasm(b: *Build, target: Build.ResolvedTarget, upstream: *Build.Dependency) Build.LazyPath {
+    if (target.result.os.tag != .windows) {
+        // Only builds on Windows have this issue, otherwise everything works as advertised.
+        return upstream.path("dynasm/dynasm.lua");
+    }
+
+    const gen_fixed_dynasm = b.addExecutable(.{
+        .target = target,
+        .name = "generate_fixed_dynasm",
+        .root_source_file = b.path("build/generate_fixed_dynasm.zig"),
+    });
+    const run = b.addRunArtifact(gen_fixed_dynasm);
+    run.addFileArg(upstream.path("dynasm/dynasm.lua"));
+    const generated = run.addOutputFileArg("dynasm.lua");
+
+    const wf = b.addWriteFiles();
+    _ = wf.addCopyFile(generated, "dynasm/dynasm.lua");
+    return wf.getDirectory().path(b, "dynasm/dynasm.lua");
 }
 
 const luajit_lib = [_][]const u8{
