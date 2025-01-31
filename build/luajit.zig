@@ -215,6 +215,9 @@ fn getPathSeparatorFixedDynasm(b: *Build, target: Build.ResolvedTarget, upstream
 
     const wf = b.addWriteFiles();
     _ = wf.addCopyFile(generated, "dynasm/dynasm.lua");
+    _ = wf.addCopyFile(upstream.path("dynasm/dasm_x64.lua"), "dynasm/dasm_x64.lua");
+    _ = wf.addCopyFile(upstream.path("dynasm/dasm_x86.lua"), "dynasm/dasm_x86.lua");
+
     return wf.getDirectory().path(b, "dynasm/dynasm.lua");
 }
 

@@ -11,6 +11,7 @@ pub fn main() !void {
     }
 
     const args = try std.process.argsAlloc(alloc);
+    defer std.process.argsFree(alloc, args);
 
     if (args.len != 3) {
         std.debug.print("Usage: `{s} <path-to-dynasm.lua> <path-to-fixed-file-to-create>`\n", .{@typeName(@This())});
