@@ -4,7 +4,8 @@
 
 Used to compile and link the native [LuaJIT][LUAJIT] C API into Zig ⚡ applications.
 
-![Build Status Badge](https://img.shields.io/github/actions/workflow/status/sackosoft/zig-luajit-build/build.yml?label=build)
+![Ubuntu Build Status Badge](https://img.shields.io/github/actions/workflow/status/sackosoft/zig-luajit-build/build-ubuntu.yml?label=Linux%20Build)
+![Windows Build Status Badge](https://img.shields.io/github/actions/workflow/status/sackosoft/zig-luajit-build/build-windows.yml?label=Windows%20Build)
 ![GitHub License](https://img.shields.io/github/license/sackosoft/zig-luajit-build)
 
 <!--
