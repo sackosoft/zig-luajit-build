@@ -5,7 +5,7 @@
     .dependencies = .{
         .upstream = .{
             .url = "git+https://github.com/LuaJIT/LuaJIT#a4f56a459a588ae768801074b46ba0adcfb49eb1",
-            .hash = "1220b5705227612e2d3759306481892afd2bbd9f93516da5300ac56bd5ec6e49449c",
+            .hash = "N-V-__8AAIdJQgC1cFInYS4tN1kwZIGJKv0rvZ-TUW2lMArF",
         },
     },
     .paths = .{
