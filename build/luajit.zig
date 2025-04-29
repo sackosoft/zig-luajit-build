@@ -8,7 +8,8 @@ const Build = std.Build;
 const Step = std.Build.Step;
 
 pub fn configure(b: *Build, target: Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, upstream: *Build.Dependency, shared: bool) *Step.Compile {
-    // TODO: extract this to the main build function because it is shared between all specialized build functions
+    // Use b.host to get the native target for build-time tools
+    const host = b.graph.host;
 
     const lib: *Step.Compile = if (shared)
         b.addSharedLibrary(.{
@@ -26,7 +27,7 @@ pub fn configure(b: *Build, target: Build.ResolvedTarget, optimize: std.builtin.
     // Compile minilua interpreter used at build time to generate files
     const minilua = b.addExecutable(.{
         .name = "minilua",
-        .target = target, // TODO ensure this is the host
+        .target = host,
         .optimize = .ReleaseSafe,
     });
     minilua.linkLibC();
@@ -35,7 +36,7 @@ pub fn configure(b: *Build, target: Build.ResolvedTarget, optimize: std.builtin.
 
     // Generate the buildvm_arch.h file using minilua
     const dynasm_run = b.addRunArtifact(minilua);
-    dynasm_run.addFileArg(getPathSeparatorFixedDynasm(b, target, upstream));
+    dynasm_run.addFileArg(getPathSeparatorFixedDynasm(b, host, upstream));
 
     // TODO: Many more flags to figure out
     if (target.result.cpu.arch.endian() == .little) {
@@ -77,7 +78,7 @@ pub fn configure(b: *Build, target: Build.ResolvedTarget, optimize: std.builtin.
     // Compile the buildvm executable used to generate other files
     const buildvm = b.addExecutable(.{
         .name = "buildvm",
-        .target = target, // TODO ensure this is the host
+        .target = host,
         .optimize = .ReleaseSafe,
     });
     buildvm.linkLibC();
