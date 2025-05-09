@@ -26,7 +26,7 @@ pub fn configure(b: *Build, target: Build.ResolvedTarget, optimize: std.builtin.
     // Compile minilua interpreter used at build time to generate files
     const minilua = b.addExecutable(.{
         .name = "minilua",
-        .target = target, // TODO ensure this is the host
+        .target = b.graph.host,
         .optimize = .ReleaseSafe,
     });
     minilua.linkLibC();
@@ -74,10 +74,22 @@ pub fn configure(b: *Build, target: Build.ResolvedTarget, optimize: std.builtin.
     genversion_run.addFileArg(b.path("build/luajit_relver.txt"));
     const luajit_h = genversion_run.addOutputFileArg("luajit.h");
 
+    // LuaJIT doesn't cross compile very well...
+    // We need to execute buildvm on the target architecture, but we can use QEMU if available
+    // However, we can't use the target directly since it may not be compatible (i.e. GNU on NixOS)
+    const buildvm_target = blk: {
+        if (target.result.cpu.arch != @import("builtin").target.cpu.arch) {
+            var query = target.query;
+            query.abi = .default(target.result.cpu.arch, @import("builtin").os.tag);
+            break :blk b.resolveTargetQuery(query);
+        }
+        break :blk target;
+    };
+
     // Compile the buildvm executable used to generate other files
     const buildvm = b.addExecutable(.{
         .name = "buildvm",
-        .target = target, // TODO ensure this is the host
+        .target = buildvm_target,
         .optimize = .ReleaseSafe,
     });
     buildvm.linkLibC();
@@ -169,6 +181,10 @@ pub fn configure(b: *Build, target: Build.ResolvedTarget, optimize: std.builtin.
     lib.linkSystemLibrary("unwind");
     lib.root_module.unwind_tables = .sync;
 
+    // Zig's compiler_rt does not provide this architecture-specific function.
+    // Thankfully, Clang provides a builtin to accomplish the same thing.
+    lib.root_module.addCMacro("__clear_cache", "__builtin___clear_cache");
+
     lib.addIncludePath(upstream.path("src"));
     lib.addIncludePath(luajit_h.dirname());
     lib.addIncludePath(bcdef_header.dirname());
@@ -203,7 +219,7 @@ fn getPathSeparatorFixedDynasm(b: *Build, target: Build.ResolvedTarget, upstream
     }
 
     const gen_fixed_dynasm = b.addExecutable(.{
-        .target = target,
+        .target = b.graph.host,
         .name = "generate_fixed_dynasm",
         .root_source_file = b.path("build/generate_fixed_dynasm.zig"),
     });
