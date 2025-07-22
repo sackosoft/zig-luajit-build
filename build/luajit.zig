@@ -9,25 +9,21 @@ const Step = std.Build.Step;
 
 pub fn configure(b: *Build, target: Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, upstream: *Build.Dependency, shared: bool) *Step.Compile {
     // TODO: extract this to the main build function because it is shared between all specialized build functions
+    const mod = b.createModule(.{
+        .target = target,
+        .optimize = optimize,
+    });
 
-    const lib: *Step.Compile = if (shared)
-        b.addSharedLibrary(.{
-            .name = "lua",
-            .target = target,
-            .optimize = optimize,
-        })
-    else
-        b.addStaticLibrary(.{
-            .name = "lua",
-            .target = target,
-            .optimize = optimize,
-        });
+    const lib = b.addLibrary(.{ .name = "lua", .root_module = mod, .linkage = if (shared) .dynamic else .static });
 
+    const minilua_mod = b.createModule(.{
+        .target = b.graph.host,
+        .optimize = .ReleaseSafe,
+    });
     // Compile minilua interpreter used at build time to generate files
     const minilua = b.addExecutable(.{
         .name = "minilua",
-        .target = b.graph.host,
-        .optimize = .ReleaseSafe,
+        .root_module = minilua_mod,
     });
     minilua.linkLibC();
     minilua.root_module.sanitize_c = .off;
@@ -86,11 +82,14 @@ pub fn configure(b: *Build, target: Build.ResolvedTarget, optimize: std.builtin.
         break :blk target;
     };
 
+    const buildvm_mod = b.createModule(.{
+        .target = buildvm_target,
+        .optimize = .ReleaseSafe,
+    });
     // Compile the buildvm executable used to generate other files
     const buildvm = b.addExecutable(.{
         .name = "buildvm",
-        .target = buildvm_target,
-        .optimize = .ReleaseSafe,
+        .root_module = buildvm_mod,
     });
     buildvm.linkLibC();
     buildvm.root_module.sanitize_c = .off;
@@ -218,10 +217,13 @@ fn getPathSeparatorFixedDynasm(b: *Build, target: Build.ResolvedTarget, upstream
         return upstream.path("dynasm/dynasm.lua");
     }
 
-    const gen_fixed_dynasm = b.addExecutable(.{
+    const gen_fixed_dynasm_mod = b.createModule(.{
         .target = b.graph.host,
-        .name = "generate_fixed_dynasm",
         .root_source_file = b.path("build/generate_fixed_dynasm.zig"),
+    });
+    const gen_fixed_dynasm = b.addExecutable(.{
+        .name = "generate_fixed_dynasm",
+        .root_module = gen_fixed_dynasm_mod,
     });
     const run = b.addRunArtifact(gen_fixed_dynasm);
     run.addFileArg(upstream.path("dynasm/dynasm.lua"));
