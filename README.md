@@ -35,7 +35,9 @@ If you're looking to run Lua on LuaJIT in your Zig application, you're probably 
 
 ## Zig Version
 
-The `main` branch targets Zig's `master` (nightly) deployment (last tested with `0.15.0-dev.565+8e72a2528`).
+The `main` branch targets the latest stable Zig version. Currently `0.15.1`.
+
+For other Zig versions look for branches with the named version.
 
 ## Installation & Usage
 

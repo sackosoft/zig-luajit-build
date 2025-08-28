@@ -1,3 +1,6 @@
+//! Copyright (c) 2024-2025 Theodore Sackos
+//! SPDX-License-Identifier: MIT
+//!
 //! The LuaJIT project has some expectations that Windows users build LuaJIT using the MSVC toolchain
 //! or rely on MinGW to get a Linux-like build on Windows. LuaJIT uses a `dynasm.lua` script to dynamically
 //! generate some content during build time, and those files include references to files with line numbers.
@@ -25,14 +28,17 @@ pub fn main() !void {
         std.process.exit(1);
     }
 
-    var input = try std.fs.cwd().openFile(args[1], .{});
-    defer input.close();
+    var inputFile = try std.fs.cwd().openFile(args[1], .{});
+    defer inputFile.close();
 
-    var output = try std.fs.cwd().createFile(args[2], .{});
-    defer output.close();
+    var outputFile = try std.fs.cwd().createFile(args[2], .{});
+    defer outputFile.close();
 
-    var line_buffer: [256 * 1024]u8 = undefined;
-    var reader = input.reader();
+    var read_buffer: [16 * 1024]u8 = undefined;
+    var reader = inputFile.reader(&read_buffer);
+
+    var write_buffer: [16 * 1024]u8 = undefined;
+    var writer = outputFile.writer(&write_buffer);
 
     // This seems to be the source of the problem building LuaJIT on windows using Zig.
     // The `g_fname` is written as windows file paths `C:\Users\Example\...`. The LuaJIT maintainers expect
@@ -48,12 +54,20 @@ pub fn main() !void {
         \\wline("#line "..g_lineno..' "'..g_fname:gsub("\\", "/")..'"')
     );
 
-    while (try reader.readUntilDelimiterOrEof(&line_buffer, '\n')) |line| {
+    while (reader.interface.takeDelimiterInclusive('\n')) |line| {
         if (std.mem.indexOf(u8, line, target)) |_| {
-            _ = try output.write(replacement);
+            _ = try writer.interface.write(replacement);
         } else {
-            _ = try output.write(line);
-            _ = try output.write("\n");
+            _ = try writer.interface.write(line);
+            _ = try writer.interface.write("\n");
+        }
+    } else |err| blk: {
+        switch (err) {
+            error.EndOfStream => break :blk,
+            error.ReadFailed => @panic("ERROR [ReadFailed] when reading lines to patch dynasm for platform-specific differences"),
+            error.StreamTooLong => @panic("ERROR [StreamTooLong] when reading lines to patch dynasm for platform-specific differences"),
         }
     }
+
+    try writer.interface.flush();
 }

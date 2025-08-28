@@ -1,5 +1,9 @@
 //! Copyright (c) 2024-2025 Theodore Sackos
-//! SPDX-License-Identifier: AGPL-3.0-or-later
+//! SPDX-License-Identifier: MIT
+//!
+//! This file demonstrates using the native C API to implement a primitive Read-Evaluatate-Print (REPL) loop. The user
+//! is prompted to LuaJIT code as input, it's executed in the LuaJIT runtime and the results from the evaluation are
+//! printed as output.
 
 const std = @import("std");
 
@@ -18,22 +22,33 @@ pub fn main() !void {
 
     c.luaL_openlibs(L);
 
-    const stdin = std.io.getStdIn();
-    const stdout = std.io.getStdOut();
+    var stdin_buffer: [1024]u8 = undefined;
+    var stdin_reader = std.fs.File.stdin().reader(&stdin_buffer);
+    const stdin = &stdin_reader.interface;
 
-    var window: [1025]u8 = undefined;
-    const buf: []u8 = window[0..1024];
+    var stdout_buffer: [1024]u8 = undefined;
+    var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+    const stdout = &stdout_writer.interface;
+
+    var line_buffer: [1025]u8 = undefined;
 
     while (true) {
         try stdout.writeAll("> ");
+        try stdout.flush();
 
-        var input = try stdin.reader().readUntilDelimiter(buf, '\n');
-        if (input.len == 0) continue;
-        // Make it a null terminated string.
-        window[input.len + 1] = 0;
-        input = window[0 .. input.len + 1 :0];
+        var line_writer = std.Io.Writer.fixed(&line_buffer);
+        const input_len = try stdin.streamDelimiterLimit(&line_writer, '\n', std.Io.Limit.limited(1024));
+        if (input_len == 0) continue;
 
-        if (std.mem.eql(u8, input, "exit")) break;
+        // Throw away the `\n` on the input.
+        stdin.toss(1);
+
+        // Replace the `\n` terminated string with a null terminated (`\0`) string.
+        line_buffer[input_len] = '\u{0}';
+        const input = line_buffer[0 .. input_len + 1];
+
+        if (std.mem.eql(u8, input[0..4], "exit")) break;
+        if (std.mem.eql(u8, input[0..4], "quit")) break;
 
         if (c.luaL_dostring(L, input.ptr)) {
             var len: usize = undefined;

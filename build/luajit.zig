@@ -1,6 +1,8 @@
-// This code was originally copied from: https://github.com/natecraddock/ziglua and later modified to fix build issues related to backwards-incompatible Zig language changes.
-// This code is shared under the MIT License by the original author, Nathan Craddock
-// refer to https://github.com/natecraddock/ziglua/blob/90dab7e72173709353dcaaa6d911bed7655c030d/license
+//! Copyright (c) 2024-2025 Theodore Sackos, Natan Craddock
+//! SPDX-License-Identifier: MIT
+//!
+//! Original source code from [github.com/natecraddock/ziglua](https://github.com/natecraddock/ziglua/blob/90dab7e72173709353dcaaa6d911bed7655c030d).
+//! Both the original source code and modifications made to this file since then are licensed under the MIT License.
 
 const std = @import("std");
 
@@ -8,26 +10,22 @@ const Build = std.Build;
 const Step = std.Build.Step;
 
 pub fn configure(b: *Build, target: Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, upstream: *Build.Dependency, shared: bool) *Step.Compile {
-    // TODO: extract this to the main build function because it is shared between all specialized build functions
-
-    const lib: *Step.Compile = if (shared)
-        b.addSharedLibrary(.{
-            .name = "lua",
+    const lib: *Step.Compile = b.addLibrary(.{
+        .name = "lua",
+        .linkage = if (shared) .dynamic else .static,
+        .root_module = b.createModule(.{
             .target = target,
             .optimize = optimize,
-        })
-    else
-        b.addStaticLibrary(.{
-            .name = "lua",
-            .target = target,
-            .optimize = optimize,
-        });
+        }),
+    });
 
     // Compile minilua interpreter used at build time to generate files
     const minilua = b.addExecutable(.{
         .name = "minilua",
-        .target = b.graph.host,
-        .optimize = .ReleaseSafe,
+        .root_module = b.createModule(.{
+            .target = b.graph.host,
+            .optimize = .ReleaseSafe,
+        }),
     });
     minilua.linkLibC();
     minilua.root_module.sanitize_c = .off;
@@ -89,8 +87,10 @@ pub fn configure(b: *Build, target: Build.ResolvedTarget, optimize: std.builtin.
     // Compile the buildvm executable used to generate other files
     const buildvm = b.addExecutable(.{
         .name = "buildvm",
-        .target = buildvm_target,
-        .optimize = .ReleaseSafe,
+        .root_module = b.createModule(.{
+            .target = buildvm_target,
+            .optimize = .ReleaseSafe,
+        }),
     });
     buildvm.linkLibC();
     buildvm.root_module.sanitize_c = .off;
@@ -219,9 +219,11 @@ fn getPathSeparatorFixedDynasm(b: *Build, target: Build.ResolvedTarget, upstream
     }
 
     const gen_fixed_dynasm = b.addExecutable(.{
-        .target = b.graph.host,
         .name = "generate_fixed_dynasm",
-        .root_source_file = b.path("build/generate_fixed_dynasm.zig"),
+        .root_module = b.createModule(.{
+            .target = b.graph.host,
+            .root_source_file = b.path("build/generate_fixed_dynasm.zig"),
+        }),
     });
     const run = b.addRunArtifact(gen_fixed_dynasm);
     run.addFileArg(upstream.path("dynasm/dynasm.lua"));
