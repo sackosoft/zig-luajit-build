@@ -16,6 +16,7 @@ pub fn configure(b: *Build, target: Build.ResolvedTarget, optimize: std.builtin.
         .root_module = b.createModule(.{
             .target = target,
             .optimize = optimize,
+            .unwind_tables = .sync,
         }),
     });
 
@@ -25,6 +26,7 @@ pub fn configure(b: *Build, target: Build.ResolvedTarget, optimize: std.builtin.
         .root_module = b.createModule(.{
             .target = b.graph.host,
             .optimize = .ReleaseSafe,
+            .unwind_tables = .sync,
         }),
     });
     minilua.linkLibC();
@@ -90,6 +92,7 @@ pub fn configure(b: *Build, target: Build.ResolvedTarget, optimize: std.builtin.
         .root_module = b.createModule(.{
             .target = buildvm_target,
             .optimize = .ReleaseSafe,
+            .unwind_tables = .sync,
         }),
     });
     buildvm.linkLibC();

@@ -37,6 +37,7 @@ pub fn build(b: *std.Build) void {
         .target = c_headers.target,
         .optimize = c_headers.optimize,
         .link_libc = c_headers.link_libc,
+        .unwind_tables = .sync,
     });
     luajit_build.linkLibrary(lib);
 

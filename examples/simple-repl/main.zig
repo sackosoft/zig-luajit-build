@@ -21,42 +21,47 @@ pub fn main() !void {
     defer c.lua_close(L);
 
     c.luaL_openlibs(L);
+    const type_to_name: [12][:0]const u8 = .{
+        "no value",
+        "nil",
+        "boolean",
+        "userdata",
+        "number",
+        "string",
+        "table",
+        "function",
+        "userdata",
+        "thread",
+        "proto",
+        "cdata",
+    };
 
-    var stdin_buffer: [1024]u8 = undefined;
-    var stdin_reader = std.fs.File.stdin().reader(&stdin_buffer);
-    const stdin = &stdin_reader.interface;
+    const T = struct {
+        fn ErrHandler(l: *c.lua_State) callconv(.c) i32 {
+            const top = c.lua_gettop(l);
 
-    var stdout_buffer: [1024]u8 = undefined;
-    var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
-    const stdout = &stdout_writer.interface;
+            const t = c.lua_type(l, -1);
+            const type_name = type_to_name[@as(usize, @intCast(t)) + 1];
 
-    var line_buffer: [1025]u8 = undefined;
+            const string: [*:0]const u8 = c.lua_tolstring(l, -1, null).?;
 
-    while (true) {
-        try stdout.writeAll("> ");
-        try stdout.flush();
-
-        var line_writer = std.Io.Writer.fixed(&line_buffer);
-        const input_len = try stdin.streamDelimiterLimit(&line_writer, '\n', std.Io.Limit.limited(1024));
-        if (input_len == 0) continue;
-
-        // Throw away the `\n` on the input.
-        stdin.toss(1);
-
-        // Replace the `\n` terminated string with a null terminated (`\0`) string.
-        line_buffer[input_len] = '\u{0}';
-        const input = line_buffer[0 .. input_len + 1];
-
-        if (std.mem.eql(u8, input[0..4], "exit")) break;
-        if (std.mem.eql(u8, input[0..4], "quit")) break;
-
-        if (c.luaL_dostring(L, input.ptr)) {
-            var len: usize = undefined;
-            const s = c.lua_tolstring(L, -1, &len);
-            std.debug.print("Error: {s}\n", .{s});
-            continue;
+            std.debug.print("ErrHandler: Stack contains {d} an {s}: '{s}'\n", .{ top, type_name, string });
+            return 0;
         }
-    }
+
+        fn Fn(l: *c.lua_State) callconv(.c) i32 {
+            c.luaL_checkstack(l, 9000, "CUSTOM ERROR MESSAGE");
+            return 0;
+        }
+    };
+
+    c.lua_pushcclosure(L, @ptrCast(&T.ErrHandler), 0);
+    c.lua_pushcclosure(L, @ptrCast(&T.Fn), 0);
+
+    std.debug.print("Calling into function...\n", .{});
+    const res = c.lua_pcall(L, 0, 0, 1);
+    std.debug.print("pcall = {d}\n", .{res});
+    std.debug.print("Error message: '{s}'\n", .{c.lua_tolstring(L, -1, null).?});
 }
 
 const max_alignment: std.mem.Alignment = std.mem.Alignment.of(std.c.max_align_t);
