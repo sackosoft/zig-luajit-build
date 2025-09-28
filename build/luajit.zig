@@ -78,7 +78,7 @@ pub fn configure(b: *Build, target: Build.ResolvedTarget, optimize: std.builtin.
     const buildvm_target = blk: {
         if (target.result.cpu.arch != @import("builtin").target.cpu.arch) {
             var query = target.query;
-            query.abi = .default(target.result.cpu.arch, @import("builtin").os.tag);
+            query.abi = .default(target.result.cpu.arch, target.result.os.tag);
             break :blk b.resolveTargetQuery(query);
         }
         break :blk target;
