@@ -10,35 +10,26 @@
 
 const std = @import("std");
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const alloc = gpa.allocator();
-    defer {
-        if (gpa.deinit() != .ok) {
-            std.debug.print("GPA: Leak detected.\n", .{});
-            std.process.exit(1);
-        }
-    }
-
-    const args = try std.process.argsAlloc(alloc);
-    defer std.process.argsFree(alloc, args);
+pub fn main(init: std.process.Init) !void {
+    const arena = init.arena.allocator();
+    const args = try init.minimal.args.toSlice(arena);
 
     if (args.len != 3) {
         std.debug.print("Usage: `{s} <path-to-dynasm.lua> <path-to-fixed-file-to-create>`\n", .{@typeName(@This())});
         std.process.exit(1);
     }
 
-    var inputFile = try std.fs.cwd().openFile(args[1], .{});
-    defer inputFile.close();
+    var inputFile = try std.Io.Dir.cwd().openFile(init.io, args[1], .{});
+    defer std.Io.File.close(inputFile, init.io);
 
-    var outputFile = try std.fs.cwd().createFile(args[2], .{});
-    defer outputFile.close();
+    var outputFile = try std.Io.Dir.cwd().createFile(init.io, args[2], .{});
+    defer std.Io.File.close(outputFile, init.io);
 
     var read_buffer: [16 * 1024]u8 = undefined;
-    var reader = inputFile.reader(&read_buffer);
+    var reader = inputFile.reader(init.io, &read_buffer);
 
     var write_buffer: [16 * 1024]u8 = undefined;
-    var writer = outputFile.writer(&write_buffer);
+    var writer = outputFile.writer(init.io, &write_buffer);
 
     // This seems to be the source of the problem building LuaJIT on windows using Zig.
     // The `g_fname` is written as windows file paths `C:\Users\Example\...`. The LuaJIT maintainers expect

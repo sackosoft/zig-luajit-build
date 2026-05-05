@@ -3,9 +3,7 @@
     .fingerprint = 0x6ab488fcaa25a365,
     .version = "0.0.0",
     .dependencies = .{
-        .luajit_build = .{
-            .path = "../.."
-        },
+        .luajit_build = .{ .path = "../.." },
     },
     .paths = .{
         "build.zig",

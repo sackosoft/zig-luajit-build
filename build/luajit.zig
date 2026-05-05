@@ -5,31 +5,37 @@
 //! Both the original source code and modifications made to this file since then are licensed under the MIT License.
 
 const std = @import("std");
-
 const Build = std.Build;
 const Step = std.Build.Step;
 
 pub fn configure(b: *Build, target: Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, upstream: *Build.Dependency, shared: bool) *Step.Compile {
+    const lib_module = b.createModule(.{
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
     const lib: *Step.Compile = b.addLibrary(.{
         .name = "lua",
         .linkage = if (shared) .dynamic else .static,
-        .root_module = b.createModule(.{
-            .target = target,
-            .optimize = optimize,
-        }),
+        .root_module = lib_module,
+    });
+    lib.root_module.sanitize_c = .off;
+
+    const minilua_module = b.createModule(.{
+        .target = b.graph.host,
+        .optimize = .ReleaseSafe,
+        .link_libc = true,
+    });
+    minilua_module.sanitize_c = .off;
+    minilua_module.addCSourceFile(.{
+        .file = upstream.path("src/host/minilua.c"),
     });
 
     // Compile minilua interpreter used at build time to generate files
     const minilua = b.addExecutable(.{
         .name = "minilua",
-        .root_module = b.createModule(.{
-            .target = b.graph.host,
-            .optimize = .ReleaseSafe,
-        }),
+        .root_module = minilua_module,
     });
-    minilua.linkLibC();
-    minilua.root_module.sanitize_c = .off;
-    minilua.addCSourceFile(.{ .file = upstream.path("src/host/minilua.c") });
 
     // Generate the buildvm_arch.h file using minilua
     const dynasm_run = b.addRunArtifact(minilua);
@@ -84,33 +90,29 @@ pub fn configure(b: *Build, target: Build.ResolvedTarget, optimize: std.builtin.
         break :blk target;
     };
 
-    // Compile the buildvm executable used to generate other files
+    const buildvm_module = b.createModule(.{
+        .target = buildvm_target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    buildvm_module.sanitize_c = .off;
+    buildvm_module.addCSourceFiles(.{
+        .root = upstream.path(""),
+        .files = &buildvm_sources,
+    });
+    buildvm_module.addIncludePath(upstream.path("src"));
+    buildvm_module.addIncludePath(upstream.path("src/host"));
+    buildvm_module.addIncludePath(buildvm_arch_h.dirname());
+    buildvm_module.addIncludePath(luajit_h.dirname());
+
     const buildvm = b.addExecutable(.{
         .name = "buildvm",
-        .root_module = b.createModule(.{
-            .target = buildvm_target,
-            .optimize = .ReleaseSafe,
-        }),
+        .root_module = buildvm_module,
     });
-    buildvm.linkLibC();
-    buildvm.root_module.sanitize_c = .off;
 
     // Needs to run after the buildvm_arch.h and luajit.h files are generated
     buildvm.step.dependOn(&dynasm_run.step);
     buildvm.step.dependOn(&genversion_run.step);
-
-    buildvm.addCSourceFiles(.{
-        .root = .{ .dependency = .{
-            .dependency = upstream,
-            .sub_path = "",
-        } },
-        .files = &.{ "src/host/buildvm_asm.c", "src/host/buildvm_fold.c", "src/host/buildvm_lib.c", "src/host/buildvm_peobj.c", "src/host/buildvm.c" },
-    });
-
-    buildvm.addIncludePath(upstream.path("src"));
-    buildvm.addIncludePath(upstream.path("src/host"));
-    buildvm.addIncludePath(buildvm_arch_h.dirname());
-    buildvm.addIncludePath(luajit_h.dirname());
 
     // Use buildvm to generate files and headers used in the final vm
     const buildvm_bcdef = b.addRunArtifact(buildvm);
@@ -160,10 +162,10 @@ pub fn configure(b: *Build, target: Build.ResolvedTarget, optimize: std.builtin.
     buildvm_ljvm.addArg("-o");
     if (target.result.os.tag == .windows) {
         const ljvm_ob = buildvm_ljvm.addOutputFileArg("lj_vm.o");
-        lib.addObjectFile(ljvm_ob);
+        lib.root_module.addObjectFile(ljvm_ob);
     } else {
         const ljvm_asm = buildvm_ljvm.addOutputFileArg("lj_vm.S");
-        lib.addAssemblyFile(ljvm_asm);
+        lib.root_module.addAssemblyFile(ljvm_asm);
     }
 
     // Finally build LuaJIT after generating all the files
@@ -175,33 +177,26 @@ pub fn configure(b: *Build, target: Build.ResolvedTarget, optimize: std.builtin.
     lib.step.dependOn(&buildvm_folddef.step);
     lib.step.dependOn(&buildvm_ljvm.step);
 
-    lib.linkLibC();
-
     lib.root_module.addCMacro("LUAJIT_UNWIND_EXTERNAL", "1");
-    lib.linkSystemLibrary("unwind");
+    lib.root_module.linkSystemLibrary("unwind", .{});
     lib.root_module.unwind_tables = .sync;
 
     // Zig's compiler_rt does not provide this architecture-specific function.
     // Thankfully, Clang provides a builtin to accomplish the same thing.
     lib.root_module.addCMacro("__clear_cache", "__builtin___clear_cache");
 
-    lib.addIncludePath(upstream.path("src"));
-    lib.addIncludePath(luajit_h.dirname());
-    lib.addIncludePath(bcdef_header.dirname());
-    lib.addIncludePath(ffdef_header.dirname());
-    lib.addIncludePath(libdef_header.dirname());
-    lib.addIncludePath(recdef_header.dirname());
-    lib.addIncludePath(folddef_header.dirname());
-
-    lib.addCSourceFiles(.{
-        .root = .{ .dependency = .{
-            .dependency = upstream,
-            .sub_path = "",
-        } },
-        .files = &luajit_vm,
+    lib.root_module.addCSourceFiles(.{
+        .root = upstream.path(""),
+        .files = &lua_sources,
     });
 
-    lib.root_module.sanitize_c = .off;
+    lib.root_module.addIncludePath(upstream.path("src"));
+    lib.root_module.addIncludePath(luajit_h.dirname());
+    lib.root_module.addIncludePath(bcdef_header.dirname());
+    lib.root_module.addIncludePath(ffdef_header.dirname());
+    lib.root_module.addIncludePath(libdef_header.dirname());
+    lib.root_module.addIncludePath(recdef_header.dirname());
+    lib.root_module.addIncludePath(folddef_header.dirname());
 
     lib.installHeader(upstream.path("src/lua.h"), "lua.h");
     lib.installHeader(upstream.path("src/lualib.h"), "lualib.h");
@@ -252,7 +247,27 @@ const luajit_lib = [_][]const u8{
     "src/lib_buffer.c",
 };
 
-const luajit_vm = luajit_lib ++ [_][]const u8{
+const buildvm_sources = [_][]const u8{
+    "src/host/buildvm.c",
+    "src/host/buildvm_asm.c",
+    "src/host/buildvm_fold.c",
+    "src/host/buildvm_lib.c",
+    "src/host/buildvm_peobj.c",
+};
+
+const lua_sources = [_][]const u8{
+    "src/lib_base.c",
+    "src/lib_math.c",
+    "src/lib_bit.c",
+    "src/lib_string.c",
+    "src/lib_table.c",
+    "src/lib_io.c",
+    "src/lib_os.c",
+    "src/lib_package.c",
+    "src/lib_debug.c",
+    "src/lib_jit.c",
+    "src/lib_ffi.c",
+    "src/lib_buffer.c",
     "src/lj_assert.c",
     "src/lj_gc.c",
     "src/lj_err.c",
