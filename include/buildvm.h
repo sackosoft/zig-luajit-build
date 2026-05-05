@@ -1,0 +1,5 @@
+#include "src/host/buildvm_asm.c"
+#include "src/host/buildvm_fold.c"
+#include "src/host/buildvm_lib.c"
+#include "src/host/buildvm_peobj.c"
+#include "src/host/buildvm.c"
