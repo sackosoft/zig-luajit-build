@@ -9,8 +9,7 @@ const Build = std.Build;
 const Step = std.Build.Step;
 
 pub fn configure(b: *Build, target: Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, upstream: *Build.Dependency, shared: bool) *Step.Compile {
-    const lib_translatec = b.addTranslateC(.{
-        .root_source_file = b.path("include/luajitvm.h"),
+    const lib_module = b.createModule(.{
         .target = target,
         .optimize = optimize,
         .link_libc = true,
@@ -18,25 +17,25 @@ pub fn configure(b: *Build, target: Build.ResolvedTarget, optimize: std.builtin.
     const lib: *Step.Compile = b.addLibrary(.{
         .name = "lua",
         .linkage = if (shared) .dynamic else .static,
-        .root_module = lib_translatec.createModule(),
+        .root_module = lib_module,
     });
     lib.root_module.sanitize_c = .off;
-    lib.step.dependOn(&lib_translatec.step);
 
-    const minilua_translatec = b.addTranslateC(.{
-        .root_source_file = upstream.path("src/host/minilua.c"),
+    const minilua_module = b.createModule(.{
         .target = b.graph.host,
         .optimize = .ReleaseSafe,
         .link_libc = true,
+    });
+    minilua_module.sanitize_c = .off;
+    minilua_module.addCSourceFile(.{
+        .file = upstream.path("src/host/minilua.c"),
     });
 
     // Compile minilua interpreter used at build time to generate files
     const minilua = b.addExecutable(.{
         .name = "minilua",
-        .root_module = minilua_translatec.createModule(),
+        .root_module = minilua_module,
     });
-    minilua.root_module.sanitize_c = .off;
-    minilua.step.dependOn(&minilua_translatec.step);
 
     // Generate the buildvm_arch.h file using minilua
     const dynasm_run = b.addRunArtifact(minilua);
@@ -91,27 +90,29 @@ pub fn configure(b: *Build, target: Build.ResolvedTarget, optimize: std.builtin.
         break :blk target;
     };
 
-    const buildvm_translatec = b.addTranslateC(.{
-        .root_source_file = b.path("include/buildvm.h"),
+    const buildvm_module = b.createModule(.{
         .target = buildvm_target,
         .optimize = optimize,
         .link_libc = true,
     });
+    buildvm_module.sanitize_c = .off;
+    buildvm_module.addCSourceFiles(.{
+        .root = upstream.path(""),
+        .files = &buildvm_sources,
+    });
+    buildvm_module.addIncludePath(upstream.path("src"));
+    buildvm_module.addIncludePath(upstream.path("src/host"));
+    buildvm_module.addIncludePath(buildvm_arch_h.dirname());
+    buildvm_module.addIncludePath(luajit_h.dirname());
+
     const buildvm = b.addExecutable(.{
         .name = "buildvm",
-        .root_module = buildvm_translatec.createModule(),
+        .root_module = buildvm_module,
     });
-    buildvm.root_module.sanitize_c = .off;
-    buildvm.step.dependOn(&buildvm_translatec.step);
 
     // Needs to run after the buildvm_arch.h and luajit.h files are generated
     buildvm.step.dependOn(&dynasm_run.step);
     buildvm.step.dependOn(&genversion_run.step);
-
-    buildvm_translatec.addIncludePath(upstream.path("src"));
-    buildvm_translatec.addIncludePath(upstream.path("src/host"));
-    buildvm_translatec.addIncludePath(buildvm_arch_h.dirname());
-    buildvm_translatec.addIncludePath(luajit_h.dirname());
 
     // Use buildvm to generate files and headers used in the final vm
     const buildvm_bcdef = b.addRunArtifact(buildvm);
@@ -184,13 +185,18 @@ pub fn configure(b: *Build, target: Build.ResolvedTarget, optimize: std.builtin.
     // Thankfully, Clang provides a builtin to accomplish the same thing.
     lib.root_module.addCMacro("__clear_cache", "__builtin___clear_cache");
 
-    lib_translatec.addIncludePath(upstream.path("src"));
-    lib_translatec.addIncludePath(luajit_h.dirname());
-    lib_translatec.addIncludePath(bcdef_header.dirname());
-    lib_translatec.addIncludePath(ffdef_header.dirname());
-    lib_translatec.addIncludePath(libdef_header.dirname());
-    lib_translatec.addIncludePath(recdef_header.dirname());
-    lib_translatec.addIncludePath(folddef_header.dirname());
+    lib.root_module.addCSourceFiles(.{
+        .root = upstream.path(""),
+        .files = &lua_sources,
+    });
+
+    lib.root_module.addIncludePath(upstream.path("src"));
+    lib.root_module.addIncludePath(luajit_h.dirname());
+    lib.root_module.addIncludePath(bcdef_header.dirname());
+    lib.root_module.addIncludePath(ffdef_header.dirname());
+    lib.root_module.addIncludePath(libdef_header.dirname());
+    lib.root_module.addIncludePath(recdef_header.dirname());
+    lib.root_module.addIncludePath(folddef_header.dirname());
 
     lib.installHeader(upstream.path("src/lua.h"), "lua.h");
     lib.installHeader(upstream.path("src/lualib.h"), "lualib.h");
@@ -239,4 +245,84 @@ const luajit_lib = [_][]const u8{
     "src/lib_jit.c",
     "src/lib_ffi.c",
     "src/lib_buffer.c",
+};
+
+const buildvm_sources = [_][]const u8{
+    "src/host/buildvm.c",
+    "src/host/buildvm_asm.c",
+    "src/host/buildvm_fold.c",
+    "src/host/buildvm_lib.c",
+    "src/host/buildvm_peobj.c",
+};
+
+const lua_sources = [_][]const u8{
+    "src/lib_base.c",
+    "src/lib_math.c",
+    "src/lib_bit.c",
+    "src/lib_string.c",
+    "src/lib_table.c",
+    "src/lib_io.c",
+    "src/lib_os.c",
+    "src/lib_package.c",
+    "src/lib_debug.c",
+    "src/lib_jit.c",
+    "src/lib_ffi.c",
+    "src/lib_buffer.c",
+    "src/lj_assert.c",
+    "src/lj_gc.c",
+    "src/lj_err.c",
+    "src/lj_char.c",
+    "src/lj_bc.c",
+    "src/lj_obj.c",
+    "src/lj_buf.c",
+    "src/lj_str.c",
+    "src/lj_tab.c",
+    "src/lj_func.c",
+    "src/lj_udata.c",
+    "src/lj_meta.c",
+    "src/lj_debug.c",
+    "src/lj_prng.c",
+    "src/lj_state.c",
+    "src/lj_dispatch.c",
+    "src/lj_vmevent.c",
+    "src/lj_vmmath.c",
+    "src/lj_strscan.c",
+    "src/lj_strfmt.c",
+    "src/lj_strfmt_num.c",
+    "src/lj_serialize.c",
+    "src/lj_api.c",
+    "src/lj_profile.c",
+    "src/lj_lex.c",
+    "src/lj_parse.c",
+    "src/lj_bcread.c",
+    "src/lj_bcwrite.c",
+    "src/lj_load.c",
+    "src/lj_ir.c",
+    "src/lj_opt_mem.c",
+    "src/lj_opt_fold.c",
+    "src/lj_opt_narrow.c",
+    "src/lj_opt_dce.c",
+    "src/lj_opt_loop.c",
+    "src/lj_opt_split.c",
+    "src/lj_opt_sink.c",
+    "src/lj_mcode.c",
+    "src/lj_snap.c",
+    "src/lj_record.c",
+    "src/lj_crecord.c",
+    "src/lj_ffrecord.c",
+    "src/lj_asm.c",
+    "src/lj_trace.c",
+    "src/lj_gdbjit.c",
+    "src/lj_ctype.c",
+    "src/lj_cdata.c",
+    "src/lj_cconv.c",
+    "src/lj_ccall.c",
+    "src/lj_ccallback.c",
+    "src/lj_carith.c",
+    "src/lj_clib.c",
+    "src/lj_cparse.c",
+    "src/lj_lib.c",
+    "src/lj_alloc.c",
+    "src/lib_aux.c",
+    "src/lib_init.c",
 };
