@@ -60,16 +60,20 @@ pub fn configure(b: *Build, target: Build.ResolvedTarget, optimize: std.builtin.
     dynasm_run.addArg("-o");
     const buildvm_arch_h = dynasm_run.addOutputFileArg("buildvm_arch.h");
 
-    dynasm_run.addFileArg(upstream.path(switch (target.result.cpu.arch) {
-        .x86 => "src/vm_x86.dasc",
-        .x86_64 => "src/vm_x64.dasc",
-        .arm, .armeb => "src/vm_arm.dasc",
-        .aarch64, .aarch64_be => "src/vm_arm64.dasc",
-        .powerpc, .powerpcle => "src/vm_ppc.dasc",
-        .mips, .mipsel => "src/vm_mips.dasc",
-        .mips64, .mips64el => "src/vm_mips64.dasc",
-        else => @panic("Unsupported architecture"),
-    }));
+    const dasc_lazy = upstream.path(switch (target.result.cpu.arch) {
+            .x86 => "src/vm_x86.dasc",
+            .x86_64 => "src/vm_x64.dasc",
+            .arm, .armeb => "src/vm_arm.dasc",
+            .aarch64, .aarch64_be => "src/vm_arm64.dasc",
+            .powerpc, .powerpcle => "src/vm_ppc.dasc",
+            .mips, .mipsel => "src/vm_mips.dasc",
+            .mips64, .mips64el => "src/vm_mips64.dasc",
+            else => @panic("Unsupported architecture"),
+        });
+
+    const dasc_path_fixed = b.allocator.dupe(u8, dasc_lazy.getPath(b)) catch unreachable;
+    for (dasc_path_fixed) |*c| if (c.* == '\\') { c.* = '/'; };
+    dynasm_run.addArg(dasc_path_fixed);
 
     // Generate luajit.h using minilua
     const genversion_run = b.addRunArtifact(minilua);
