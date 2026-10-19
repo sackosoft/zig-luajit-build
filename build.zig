@@ -11,7 +11,6 @@ const LibraryKind = enum {
 const luajit_setup = @import("build/luajit.zig");
 
 pub fn build(b: *std.Build) void {
-    b.top_level_steps = .{};
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
     const link_as = b.option(LibraryKind, "link_as", "Used to enable shared (dynamic) linking; defaults to linking as a static library.") orelse .static;
